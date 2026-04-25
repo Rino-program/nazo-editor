@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -350,6 +350,7 @@ class CharParticle {
     this.blend      = 0;      // 0 = base color, 1 = drift color
     this.drifting   = false;
     this.age        = 0;      // seconds since creation
+    this._atHome    = true;   // skip physics when already settled at home
 
     // Unique organic-motion parameters (figure-eight / lemniscate)
     this._pX = Math.random() * Math.PI * 2;
@@ -651,7 +652,7 @@ function render() {
 
 // ─── animation loop ─────────────────────────────────────────
 function animate(ts) {
-  const dt  = Math.min((ts - lastT) / 1000, 0.05);
+  const dt  = Math.min((ts - lastT) / 1000, 0.016);
   lastT     = ts;
   blinkT   += dt * CFG.BLINK;
 
@@ -676,16 +677,17 @@ function animate(ts) {
   for (const p of particles) {
     if (p.homeY < animTop || p.homeY > animBottom) {
       // Snap to home silently (performance — these chars aren't visible)
-      if (p.drifting || p.blend > 0 ||
-          Math.abs(p.x - p.homeX) > 1 || Math.abs(p.y - p.homeY) > 1) {
+      if (!p._atHome) {
         p.x = p.homeX; p.y = p.homeY;
         p.vx = 0;      p.vy = 0;
         p.opacity  = 1;
         p.blend    = 0;
         p.drifting = false;
+        p._atHome  = true;
       }
       continue;
     }
+    p._atHome = false;
     p.update(curX, curY, dt);
   }
 
@@ -750,8 +752,10 @@ function posToCursorIdx(tapX, tapY) {
 function onPointerDown(e) {
   // Get coords relative to canvas (accounting for scroll)
   const rect   = canvas.getBoundingClientRect();
-  const scaleX = parseFloat(canvas.style.width)  / rect.width;
-  const scaleY = parseFloat(canvas.style.height) / rect.height;
+  const cssW   = parseFloat(canvas.style.width)  || canvas.width;
+  const cssH   = parseFloat(canvas.style.height) || canvas.height;
+  const scaleX = rect.width  > 0 ? cssW / rect.width  : 1;
+  const scaleY = rect.height > 0 ? cssH / rect.height : 1;
 
   let cx, cy;
   if (e.type === 'touchstart') {
@@ -796,6 +800,11 @@ window.addEventListener('resize', () => {
   resizeCanvas();
   // Rebuild home positions (charW may have changed)
   particles = rebuildParticles(text);
+});
+
+// ─── visibility change: reset lastT to prevent large dt on resume ───
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) lastT = performance.now();
 });
 
 // ═══════════════════════════════════════════════════════════
